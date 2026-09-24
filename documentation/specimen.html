@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ergonomic Mono specimen</title>
+<style>
+  @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-Light.otf"); font-weight: 300; }
+  @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-LightItalic.otf"); font-weight: 300; font-style: italic; }
+  @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-Regular.otf"); font-weight: 400; }
+  @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-RegularItalic.otf"); font-weight: 400; font-style: italic; }
+  @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-Medium.otf"); font-weight: 500; }
+  @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-MediumItalic.otf"); font-weight: 500; font-style: italic; }
+  @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-Bold.otf"); font-weight: 700; }
+  @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-BoldItalic.otf"); font-weight: 700; font-style: italic; }
+  :root { color-scheme: light dark; --features: "calt" 1, "ss01" 0, "ss02" 0; }
+  body { margin: 2rem auto; padding: 0 1.5rem; max-width: 72rem; font: 16px/1.6 system-ui, sans-serif; }
+  h1 { line-height: 1.2; }
+  fieldset { display: flex; flex-wrap: wrap; gap: 1rem 2rem; border: 1px solid #888; padding: 1rem; }
+  label { cursor: pointer; }
+  textarea { display: block; box-sizing: border-box; width: 100%; padding: 0.8rem; margin: 0.5rem 0 1.5rem; font: 16px/1.6 monospace; }
+  section { border-top: 1px solid #888; padding: 1rem 0; }
+  h2 { font-size: 14px; margin: 0 0 0.5rem; font-weight: 500; }
+  pre { font-family: "Ergonomic Mono", monospace; font-size: 24px; line-height: 1.7; margin: 0; overflow-x: auto; font-synthesis: none; font-feature-settings: var(--features); }
+  #status { font-size: 14px; }
+</style>
+<h1>Ergonomic Mono</h1>
+<p>Compare the four weights and their italics. Each style contains both zero and g variants.</p>
+<fieldset>
+  <legend>OpenType features</legend>
+  <label><input id="calt" type="checkbox" checked> Programming ligatures (calt)</label>
+  <label><input id="ss01" type="checkbox"> Dotted zero (ss01)</label>
+  <label><input id="ss02" type="checkbox"> Double-storey g (ss02)</label>
+</fieldset>
+<p id="status" role="status">Loading the eight local font files...</p>
+<label for="sample">Sample text</label>
+<textarea id="sample" rows="3" spellcheck="false">0O  gaggling  g0g0  0123456789
+-> => != == === <= >= &lt;=> &lt;!-- // /* */
+&& ~@ \/ .? ?: ?= ?. ?? ;; /\</textarea>
+<main id="specimens"></main>
+<script>
+  const weights = [["Light", 300], ["Regular", 400], ["Medium", 500], ["Bold", 700]];
+  const sample = document.getElementById("sample");
+  const specimens = document.getElementById("specimens");
+  const loads = [];
+  for (const [name, weight] of weights) {
+    for (const italic of [false, true]) {
+      const section = document.createElement("section");
+      const label = document.createElement("h2");
+      label.textContent = name + (italic ? " Italic" : "");
+      const pre = document.createElement("pre");
+      pre.style.fontWeight = weight;
+      pre.style.fontStyle = italic ? "italic" : "normal";
+      section.append(label, pre);
+      specimens.append(section);
+      loads.push(document.fonts.load(`${italic ? "italic" : "normal"} ${weight} 24px "Ergonomic Mono"`));
+    }
+  }
+  function update() {
+    const settings = ["calt", "ss01", "ss02"].map(tag => `"${tag}" ${Number(document.getElementById(tag).checked)}`);
+    document.documentElement.style.setProperty("--features", settings.join(", "));
+    for (const pre of specimens.querySelectorAll("pre")) pre.textContent = sample.value;
+  }
+  for (const control of document.querySelectorAll("input, textarea")) control.addEventListener("input", update);
+  update();
+  Promise.all(loads).then(fonts => {
+    if (fonts.some(faces => faces.length !== 1)) throw new Error("Font missing");
+    document.getElementById("status").textContent = "All eight fonts loaded. Defaults: slashed zero and single-storey g.";
+  }).catch(() => {
+    document.getElementById("status").textContent = "Could not load the local fonts. Run make build. If your browser blocks local fonts, serve the repository with python3 -m http.server and open /documentation/specimen.html.";
+  });
+</script>
+</html>
