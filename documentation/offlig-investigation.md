@@ -1,9 +1,19 @@
 # Offlig ligature investigation
 
-The dotted zero Offlig fonts have a reproducible layout-table conflict. All
-eight Offlig D OTFs contain both `morx` and `GSUB`. Their programming ligatures
-are in `GSUB`, but shaping uses the competing AAT substitutions. The slashed
-Offlig fonts do not contain `morx` and their programming ligatures work.
+## Summary
+
+The Offlig D fonts contain both `morx` (Apple AAT substitutions) and `GSUB`
+(OpenType substitutions). Their programming ligatures are in `GSUB`,
+but the competing `morx` table prevents them from taking effect in the tested
+HarfBuzz and CoreText shapers. Removing only `morx` from temporary copies
+restores ligatures in all eight dotted zero styles. This is consistent with
+[HarfBuzz's documented table precedence](https://harfbuzz.github.io/shaping-and-shape-plans.html).
+
+The slashed zero Offlig fonts already shape correctly in those direct tests.
+The dotted zero Offlig fonts have a reproducible layout table conflict.
+All eight Offlig D OTFs contain both `morx` and `GSUB`. Their programming
+ligatures are in `GSUB`, but shaping uses the competing AAT substitutions.
+The slashed Offlig fonts do not contain `morx` and their programming ligatures work.
 
 ## Direct shaping results
 

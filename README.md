@@ -9,11 +9,20 @@ plus selectable zero and lowercase g variants.
 Each style contains both zero and g variants; there are no separate dotted zero
 font files.
 
-## Install and configure
+## Install
 
-Install the `fonts/ErgonomicMono-*.otf` files using your OS font manager.
-Select **Ergonomic Mono** in your editor or terminal. Restart the application
-after installing or replacing fonts.
+Install with Homebrew:
+
+```bash
+brew install --cask nanxstats/tap/font-ergonomic-mono
+```
+
+Or install the `fonts/ErgonomicMono-*.otf` files using your OS font manager.
+
+## Configure
+
+Select **Ergonomic Mono** in your editor or terminal.
+Restart the application after installing or replacing fonts.
 
 | Feature | Disabled | Enabled |
 | --- | --- | --- |
@@ -127,7 +136,7 @@ names for applications that only support four-style families.
 
 ### Ligature selection and validation
 
-The original ligature exclusions are retained:
+These ligatures from Fira Code are intentionally omitted:
 
 `&&`, `~@`, `\/`, `.?`, `?:`, `?=`, `?.`, `??`, `;;`, `/\`
 
@@ -147,19 +156,6 @@ Validation uses HarfBuzz's OpenType shaper and also CoreText when available.
 The checked source revisions were Office Code Pro `d8fe9b1`, Source Code Pro
 `803b7e2`, Ligaturizer `c406518`, and its Fira Code submodule `e9943d2`.
 Future fresh clones may contain different revisions.
-
-### Why Offlig's dotted zero ligatures fail
-
-The local Offlig D fonts contain both `morx` (Apple AAT substitutions) and
-`GSUB` (OpenType substitutions). Their programming ligatures are in `GSUB`,
-but the competing `morx` table prevents them from taking effect in the tested
-HarfBuzz and CoreText shapers. Removing only `morx` from temporary copies
-restores ligatures in all eight dotted zero styles. This is consistent with
-[HarfBuzz's documented table precedence](https://harfbuzz.github.io/shaping-and-shape-plans.html).
-
-The slashed zero Offlig fonts already shape correctly in those direct tests.
-Offlig also has inconsistent family/style metadata. Details and reproduction
-commands are in [the investigation notes](documentation/offlig-investigation.md).
 
 ## License
 
