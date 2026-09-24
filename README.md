@@ -9,6 +9,8 @@ plus selectable zero and lowercase g variants.
 Each style contains both zero and g variants; there are no separate dotted zero
 font files.
 
+![Ergonomic Mono in Ghostty. With Ghostty configuration `adjust-cell-height = 8`. Theme: Raycast Dark.](documentation/screenshot-ghostty.png)
+
 ## Install
 
 Install with Homebrew:
