@@ -122,6 +122,10 @@ memory, preserves Office Code Pro's ordinary punctuation, adds labeled
 `ss01`/`ss02` features, and writes consistent names and bold/italic metadata.
 The output explicitly uses OpenType layout tables and omits inherited Apple
 AAT layout tables.
+It also repairs upstream Light/Bold `GDEF` classifications that incorrectly
+make backticks and ten other spacing accents nonspacing marks. Genuine combining
+marks retain their original classes and anchors. See the
+[spacing investigation](documentation/spacing-mark-investigation.md).
 
 The generated files are:
 
@@ -151,6 +155,8 @@ ligature glyphs cause a build failure.
 - All retained ligatures with `calt` on and off, for Latin and common-script text.
 - Every exclusion and all four combinations of zero/g features.
 - Feature independence, default behavior, cell counts, and 600-unit advances.
+- Printable ASCII, backtick contexts, Markdown code spans, and spacing accents
+  with default features and ligatures on/off; preserved combining mark data.
 - Preserved source outlines and character coverage, visible ligature outlines,
   donor g height, font naming, style flags, and the absence of AAT layout tables.
 
