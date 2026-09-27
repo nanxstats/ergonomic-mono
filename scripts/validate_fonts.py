@@ -7,11 +7,15 @@ from pathlib import Path
 import shutil
 import struct
 import subprocess
+import unicodedata
 
 import fontforge
 
 from font_config import EXCLUDED_LIGATURES, FAMILY, POSTSCRIPT_FAMILY, STYLES
 from font_config import MISSING_FIRA_LIGATURES, load_ligatures, style_names
+
+
+SPACING_ACCENTS = "`\u00a8\u00af\u00b4\u00b8\u02c6\u02c7\u02d8\u02d9\u02da\u02dc"
 
 
 def require(condition, message):
@@ -81,6 +85,9 @@ def validate_outlines(font, source, donor, style):
     require(font["space"].width == 600, "Unexpected cell width")
     for glyph in font.glyphs():
         require(glyph.width in (0, 600), "Non-monospace glyph: " + glyph.glyphname)
+        if glyph.unicode >= 0 and not unicodedata.category(chr(glyph.unicode)).startswith("M"):
+            require(glyph.glyphclass != "mark",
+                    "Spacing character classified as a mark: " + glyph.glyphname)
         if glyph.glyphname.startswith("lig."):
             require(len(glyph.foreground) > 0 and glyph.boundingBox()[0] < 0,
                     "Empty or incorrectly positioned ligature: " + glyph.glyphname)
@@ -89,6 +96,19 @@ def validate_outlines(font, source, donor, style):
     for original in source.glyphs():
         if original.unicode >= 0:
             require(original.unicode in font, "Lost character U+%04X" % original.unicode)
+            char = chr(original.unicode)
+            combining = unicodedata.category(char).startswith("M")
+            if 0x20 <= original.unicode < 0x7f or char in SPACING_ACCENTS or combining:
+                glyph = font[original.unicode]
+                require(glyph.foreground == original.foreground,
+                        "Changed source outline: " + original.glyphname)
+                require(glyph.width == original.width,
+                        "Changed source advance: " + original.glyphname)
+                if combining:
+                    require(glyph.glyphclass == original.glyphclass,
+                            "Changed combining mark class: " + original.glyphname)
+                    require(glyph.anchorPoints == original.anchorPoints,
+                            "Changed combining mark anchors: " + original.glyphname)
     for name in ("zero", "zero.alt", "g", "x", "ampersand", "question", "less", "greater"):
         require(font[name].foreground == source[name].foreground, "Changed source outline: " + name)
     require(font["zero"].foreground != font["zero.alt"].foreground, "Identical zero variants")
@@ -117,11 +137,26 @@ def shape(hb_shape, path, texts, features, shaper, script=None, language=None):
     rows = [json.loads(line) for line in result.stdout.splitlines()]
     require(len(rows) == len(texts), "HarfBuzz returned the wrong number of results")
     for text, row in zip(texts, rows):
+        require(all(g["g"] != ".notdef" for g in row), "Missing glyph: " + repr(text))
         require(len(row) == len(text), "Changed cell count: " + repr(text))
         require(all(abs(g["ax"] - 600) < 0.01 and g["ay"] == 0 for g in row),
                 "Changed cell advance: " + repr(text))
         require(all(g["dx"] == g["dy"] == 0 for g in row), "Unexpected positioning: " + repr(text))
     return [[g["g"] for g in row] for row in rows]
+
+
+def validate_spacing(hb_shape, path, shapers):
+    ascii_chars = [chr(code) for code in range(0x20, 0x7f)]
+    samples = [
+        "**`example.json`**", "*`x`*", "`x`", "x`x", "``", "```", "```json",
+        "`->`", "**`0g`**", "".join(ascii_chars), SPACING_ACCENTS,
+    ]
+    samples += ascii_chars + [char + "`" + char for char in ascii_chars]
+    samples += list(SPACING_ACCENTS) + ["x" + char + "x" for char in SPACING_ACCENTS]
+    for shaper in shapers:
+        for script in ("latn", "zyyy"):
+            for features in ("", "calt=0,liga=0", "calt=1,liga=1"):
+                shape(hb_shape, path, samples, features, shaper, script)
 
 
 def validate_shaping(hb_shape, path, texts, shapers):
@@ -189,7 +224,8 @@ def main():
             validate_metadata(path, font, style)
             validate_outlines(font, source, donor, style)
             validate_shaping(args.hb_shape, path, texts, shapers)
-            print("PASS %s: %d ligatures, 10 exclusions, 4 variant combinations (%s)" % (
+            validate_spacing(args.hb_shape, path, shapers)
+            print("PASS %s: %d ligatures, 10 exclusions, 4 variant combinations, ASCII/accent spacing (%s)" % (
                 path.name, len(texts), ", ".join(shapers)
             ))
         finally:

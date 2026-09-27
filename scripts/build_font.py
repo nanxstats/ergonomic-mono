@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import tempfile
+import unicodedata
 
 import fontforge
 import psMat
@@ -109,6 +110,19 @@ def normalize_widths(font):
             raise ValueError("Non-monospace glyph: " + glyph.glyphname)
 
 
+def repair_spacing_marks(font):
+    repaired = 0
+    for glyph in font.glyphs():
+        if glyph.glyphclass != "mark" or glyph.unicode < 0:
+            continue
+        # Upstream Light/Bold classify spacing accents (including grave) as marks.
+        # Real combining marks also have 600-unit metrics, so width cannot decide.
+        if not unicodedata.category(chr(glyph.unicode)).startswith("M"):
+            glyph.glyphclass = "baseglyph"
+            repaired += 1
+    print("  Reclassified %d spacing accents as base glyphs" % repaired)
+
+
 def build(args):
     style = args.style
     weight = style.removesuffix("Italic")
@@ -144,6 +158,7 @@ def build(args):
         add_variant(font, "ss02", "g", "g.ss02")
         set_names(font, style, donor)
         normalize_widths(font)
+        repair_spacing_marks(font)
 
         # FontForge subtracts underline thickness on export; compensate once.
         font.upos += font.uwidth
