@@ -2,7 +2,9 @@
 """Validate generated outlines, metadata and actual HarfBuzz/CoreText shaping."""
 
 import argparse
+from itertools import product
 import json
+import math
 from pathlib import Path
 import shutil
 import struct
@@ -67,17 +69,18 @@ def validate_metadata(path, font, style):
         for lookup in font.gsub_lookups
         for feature, _ in font.getLookupInfo(lookup)[2]
     }
-    require({"calt", "ss01", "ss02"} <= features, "Missing required features")
+    require({"calt", "ss01", "ss02", "ss03"} <= features, "Missing required features")
     coverage = {}
     for lookup in font.gsub_lookups:
         for feature, scripts in font.getLookupInfo(lookup)[2]:
             for script, languages in scripts:
                 coverage.setdefault(feature, set()).update((script, lang) for lang in languages)
-    for feature in ("ss01", "ss02"):
+    for feature in ("ss01", "ss02", "ss03"):
         require(coverage["calt"] <= coverage[feature], "Variant unavailable in some script/language: " + feature)
     labels = {tag: label for _, tag, label in font.style_set_names}
     require(labels.get("ss01") == "Dotted zero", "Missing ss01 label")
     require(labels.get("ss02") == "Double-storey g", "Missing ss02 label")
+    require(labels.get("ss03") == "Conventional dollar", "Missing ss03 label")
 
 
 def validate_outlines(font, source, donor, style):
@@ -125,6 +128,31 @@ def validate_outlines(font, source, donor, style):
             "Alternate g exceeds vertical metrics")
 
 
+def validate_dollar(font, source, donor):
+    require(font[0x24].glyphname == "dollar", "Incorrect dollar character mapping")
+    require("dollar.ss03" in font, "Missing dollar alternate")
+    glyph = font["dollar.ss03"]
+    require(glyph.unicode == -1, "Dollar alternate must be unencoded")
+    require(glyph.width == 600, "Incorrect dollar alternate advance")
+    require(glyph.foreground != font["dollar"].foreground, "Identical dollar variants")
+    original = donor["dollar"]
+    require(len(glyph.foreground) == len(original.foreground) > 0,
+            "Lost donor dollar contours")
+    height_scale = source["x"].boundingBox()[3] / donor["x"].boundingBox()[3]
+    width_scale = source["space"].width / donor["space"].width
+    target_slant = math.tan(math.radians(-font.italicangle))
+    donor_slant = math.tan(math.radians(-donor.italicangle))
+    outline = glyph.foreground.dup()
+    outline.transform((1 / width_scale, 0, -target_slant / width_scale, 1 / height_scale, 0, 0))
+    expected = original.foreground.dup()
+    expected.transform((1, 0, -donor_slant, 1, 0, 0))
+    # Export can replace straight cubic segments with lines and round coordinates.
+    require(outline.similar(expected, 1.5), "Incorrect donor dollar outline, scale, or slant")
+    bounds = glyph.boundingBox()
+    require(bounds[1] >= -font.os2_windescent and bounds[3] <= font.os2_winascent,
+            "Dollar alternate exceeds vertical metrics")
+
+
 def shape(hb_shape, path, texts, features, shaper, script=None, language=None):
     command = [hb_shape, str(path), "--text-file=-", "--output-format=json",
                "--features=" + features, "--shapers=" + shaper]
@@ -150,12 +178,14 @@ def validate_spacing(hb_shape, path, shapers):
     samples = [
         "**`example.json`**", "*`x`*", "`x`", "x`x", "``", "```", "```json",
         "`->`", "**`0g`**", "".join(ascii_chars), SPACING_ACCENTS,
+        "$100.00", "${value}", "$HOME", "$$",
     ]
     samples += ascii_chars + [char + "`" + char for char in ascii_chars]
     samples += list(SPACING_ACCENTS) + ["x" + char + "x" for char in SPACING_ACCENTS]
     for shaper in shapers:
         for script in ("latn", "zyyy"):
-            for features in ("", "calt=0,liga=0", "calt=1,liga=1"):
+            for features in ("", "calt=0,liga=0", "calt=1,liga=1",
+                             "ss03=1,calt=0,liga=0", "ss03=1,calt=1,liga=1"):
                 shape(hb_shape, path, samples, features, shaper, script)
 
 
@@ -164,34 +194,37 @@ def validate_shaping(hb_shape, path, texts, shapers):
     samples = texts + excluded
     for shaper in shapers:
         for script in ("latn", "zyyy"):
-            off = shape(hb_shape, path, samples, "calt=0,liga=0", shaper, script)
-            on = shape(hb_shape, path, samples, "calt=1,liga=1", shaper, script)
-            for text, normal, ligature in zip(texts, off, on):
-                require(normal != ligature and ligature[-1].startswith("lig."),
-                        "%s/%s: ligature failed for %r" % (shaper, script, text))
-                require(all(g.startswith("CR.") for g in ligature[:-1]),
-                        "Incomplete contextual substitution: " + repr(text))
-            require(off[len(texts):] == on[len(texts):], "An excluded ligature was enabled")
-        for dotted in (0, 1):
-            for double in (0, 1):
-                features = "ss01=%d,ss02=%d,calt=1,liga=1" % (dotted, double)
-                row = shape(hb_shape, path, ["0g ->"], features, shaper)[0]
-                require(row[:2] == ["zero.alt" if dotted else "zero", "g.ss02" if double else "g"],
+            for conventional in (0, 1):
+                dollar_feature = "ss03=%d," % conventional
+                off = shape(hb_shape, path, samples, dollar_feature + "calt=0,liga=0", shaper, script)
+                on = shape(hb_shape, path, samples, dollar_feature + "calt=1,liga=1", shaper, script)
+                for text, normal, ligature in zip(texts, off, on):
+                    require(normal != ligature and ligature[-1].startswith("lig."),
+                            "%s/%s/ss03=%d: ligature failed for %r" % (shaper, script, conventional, text))
+                    require(all(g.startswith("CR.") for g in ligature[:-1]),
+                            "Incomplete contextual substitution: " + repr(text))
+                require(off[len(texts):] == on[len(texts):], "An excluded ligature was enabled")
+            for dotted, double, conventional in product((0, 1), repeat=3):
+                features = "ss01=%d,ss02=%d,ss03=%d,calt=1,liga=1" % (dotted, double, conventional)
+                expected = ["zero.alt" if dotted else "zero", "g.ss02" if double else "g",
+                            "dollar.ss03" if conventional else "dollar"]
+                row = shape(hb_shape, path, ["0g$ ->"], features, shaper, script)[0]
+                require(row[:3] == expected,
                         "Glyph feature switches failed: " + features)
                 require(row[-1].startswith("lig."), "Variants interfered with calt")
-                row = shape(hb_shape, path, ["0g ->"], features + ",calt=0,liga=0", shaper)[0]
-                require(row[:2] == ["zero.alt" if dotted else "zero", "g.ss02" if double else "g"],
+                row = shape(hb_shape, path, ["0g$ ->"], features + ",calt=0,liga=0", shaper, script)[0]
+                require(row[:3] == expected,
                         "Glyph variants depend on ligatures")
                 require(row[-2:] == ["hyphen", "greater"], "calt=0 failed to disable ligatures")
-        default = shape(hb_shape, path, ["0g ->"], "", shaper)[0]
-        require(default[:2] == ["zero", "g"] and default[-1].startswith("lig."),
+        default = shape(hb_shape, path, ["0g$ ->"], "", shaper)[0]
+        require(default[:3] == ["zero", "g", "dollar"] and default[-1].startswith("lig."),
                 "Incorrect default glyphs or ligatures")
         liga_only = shape(hb_shape, path, ["->"], "calt=0,liga=1", shaper)[0]
         require(liga_only == ["hyphen", "greater"], "Unexpected liga-only substitution")
         for language in ("ca", "es", "ro", "tr", "sr"):
-            row = shape(hb_shape, path, ["0g ->"], "ss01=1,ss02=1,calt=1", shaper,
+            row = shape(hb_shape, path, ["0g$ ->"], "ss01=1,ss02=1,ss03=1,calt=1", shaper,
                         script="latn", language=language)[0]
-            require(row[:2] == ["zero.alt", "g.ss02"] and row[-1].startswith("lig."),
+            require(row[:3] == ["zero.alt", "g.ss02", "dollar.ss03"] and row[-1].startswith("lig."),
                     "Features unavailable for language: " + language)
 
 
@@ -223,9 +256,10 @@ def main():
             texts = sorted(specs.keys() - missing)
             validate_metadata(path, font, style)
             validate_outlines(font, source, donor, style)
+            validate_dollar(font, source, donor)
             validate_shaping(args.hb_shape, path, texts, shapers)
             validate_spacing(args.hb_shape, path, shapers)
-            print("PASS %s: %d ligatures, 10 exclusions, 4 variant combinations, ASCII/accent spacing (%s)" % (
+            print("PASS %s: ss03 dollar, %d ligatures, 10 exclusions, 8 variant combinations, ASCII/accent spacing (%s)" % (
                 path.name, len(texts), ", ".join(shapers)
             ))
         finally:

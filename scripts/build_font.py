@@ -24,18 +24,17 @@ def add_variant(font, feature, original, alternate):
             for script, tags in scripts:
                 languages.setdefault(script, set()).update(tags)
     scripts = tuple((script, tuple(sorted(tags))) for script, tags in sorted(languages.items()))
-    font.addLookup(lookup, "gsub_single", (), ((feature, scripts),))
+    # Apply variants after calt so dollar alternates do not prevent ligatures.
+    font.addLookup(lookup, "gsub_single", (), ((feature, scripts),), font.gsub_lookups[-1])
     font.addLookupSubtable(lookup, lookup + ".sub")
     font[original].addPosSub(lookup + ".sub", alternate)
 
 
-def add_double_storey_g(font, donor, italic):
-    # Source Code Pro's italic double-storey g is an alternate, not its base g.
-    donor_name = "g.a" if italic else "g"
+def import_donor_glyph(font, donor, donor_name, target_name):
     donor.em = font.em
     donor.selection.select(donor_name)
     donor.copy()
-    glyph = font.createChar(-1, "g.ss02")
+    glyph = font[target_name] if target_name in font else font.createChar(-1, target_name)
     font.selection.select(glyph.glyphname)
     font.paste()
     glyph.unlinkRef()
@@ -50,8 +49,8 @@ def add_double_storey_g(font, donor, italic):
     glyph.width = font["space"].width
     glyph.round()
     glyph.autoHint()
-    print("  g: %s, height scale %.4f, slant %.1f degrees" % (
-        donor_name, height_scale, font.italicangle
+    print("  %s: %s, height scale %.4f, slant %.1f degrees" % (
+        target_name, donor_name, height_scale, font.italicangle
     ))
 
 
@@ -94,6 +93,7 @@ def set_names(font, style, donor):
     font.style_set_names = (
         ("English (US)", "ss01", "Dotted zero"),
         ("English (US)", "ss02", "Double-storey g"),
+        ("English (US)", "ss03", "Conventional dollar"),
     )
 
 
@@ -137,12 +137,14 @@ def build(args):
     fira = fontforge.open(str(fira_path))
     try:
         print("Building " + style)
-        for name in ("zero", "zero.alt", "g", "x", "space"):
+        for name in ("zero", "zero.alt", "g", "dollar", "x", "space"):
             if name not in font:
                 raise ValueError("Missing source glyph: " + name)
         if font["zero"].foreground == font["zero.alt"].foreground:
             raise ValueError("The slashed and dotted zeros must differ")
-        add_double_storey_g(font, donor, style.endswith("Italic"))
+        # Source Code Pro's italic double-storey g is an alternate, not its base g.
+        import_donor_glyph(font, donor, "g.a" if style.endswith("Italic") else "g", "g.ss02")
+        import_donor_glyph(font, donor, "dollar", "dollar.ss03")
 
         creator = LigatureCreator(font, fira, 0.1, False)
         for text, spec in sorted(specs.items(), key=lambda item: len(item[0])):
@@ -156,6 +158,7 @@ def build(args):
         print("  Added %d contextual ligatures" % creator._lig_counter)
         add_variant(font, "ss01", "zero", "zero.alt")
         add_variant(font, "ss02", "g", "g.ss02")
+        add_variant(font, "ss03", "dollar", "dollar.ss03")
         set_names(font, style, donor)
         normalize_widths(font)
         repair_spacing_marks(font)

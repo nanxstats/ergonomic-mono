@@ -5,9 +5,9 @@ A customizable coding font with selectable glyph variants and programming ligatu
 Derived from [phooky's fork of Office Code Pro](https://github.com/phooky/Office-Code-Pro),
 patched with [Fira Code](https://github.com/tonsky/FiraCode) programming
 ligatures using [Ligaturizer](https://github.com/ToxicFrog/Ligaturizer),
-plus selectable zero and lowercase g variants.
-Each style contains both zero and g variants; there are no separate dotted zero
-font files.
+plus selectable zero, lowercase g, and dollar variants, with alternates from
+[Source Code Pro](https://github.com/adobe-fonts/source-code-pro).
+Each style contains all variants; there are no separate alternate font files.
 
 ![Ergonomic Mono in Ghostty. With Ghostty configuration `adjust-cell-height = 8`. Theme: Raycast Dark.](documentation/screenshot-ghostty.png)
 
@@ -30,6 +30,7 @@ Restart the application after installing or replacing fonts.
 | --- | --- | --- |
 | `ss01` | Slashed zero (default) | Dotted zero |
 | `ss02` | Single-storey g (default) | Double-storey g |
+| `ss03` | Diagonal dollar (default) | Conventional dollar |
 | `calt` | Separate operators | Programming ligatures (normally enabled) |
 
 These features are independent. For example, enable `ss02` for a double-storey
@@ -37,38 +38,44 @@ g while keeping the slashed zero. The g switch changes U+0067; precomposed
 accented g characters retain their original designs. Applications must support
 OpenType feature settings to select alternates.
 
+The dollar sign (`$`, U+0024) keeps Office Code Pro's diagonal slash by default.
+Enable `ss03` for Source Code Pro's conventional stem design in any style;
+italic styles follow the font's slant. Dollar-containing programming ligatures
+such as `<$>` retain their Fira Code outlines with either setting.
+
 Programming ligatures use `calt`; enabling `liga` alone does not activate them.
-Set `calt=0` to disable ligatures while retaining your zero and g preferences.
+Set `calt=0` to disable ligatures while retaining your zero, g, and dollar preferences.
 
 Open [the local specimen](documentation/specimen.html) in a browser to compare
 all eight styles and toggle the features without installing the fonts.
 
 ### VS Code
 
-In `settings.json`, this example enables ligatures, dotted zero, and
-double-storey g in both the editor and integrated terminal:
+In `settings.json`, this example enables ligatures, dotted zero, double-storey g,
+and the conventional dollar in both the editor and integrated terminal:
 
 ```json
 {
   "editor.fontFamily": "'Ergonomic Mono', monospace",
-  "editor.fontLigatures": "'calt', 'liga', 'ss01', 'ss02'",
+  "editor.fontLigatures": "'calt', 'liga', 'ss01', 'ss02', 'ss03'",
   "terminal.integrated.fontFamily": "'Ergonomic Mono', monospace",
   "terminal.integrated.fontLigatures.enabled": true,
-  "terminal.integrated.fontLigatures.featureSettings": "'calt', 'liga', 'ss01', 'ss02'"
+  "terminal.integrated.fontLigatures.featureSettings": "'calt', 'liga', 'ss01', 'ss02', 'ss03'"
 }
 ```
 
 Remove `'ss01'` for slashed zero; remove `'ss02'` for single-storey g.
+Remove `'ss03'` for the diagonal dollar.
 See [VS Code's terminal ligature settings](https://code.visualstudio.com/docs/terminal/appearance#_ligatures).
 
 ### Ghostty
 
 ```ini
 font-family = Ergonomic Mono
-font-feature = ss01, ss02
+font-feature = ss01, ss02, ss03
 ```
 
-Remove the `ss01` or `ss02` line to restore the default glyph.
+Remove `ss01`, `ss02`, or `ss03` from the list to restore the corresponding default glyph.
 See [Ghostty's font feature syntax](https://ghostty.org/docs/config/reference#font-feature).
 
 ## Build
@@ -109,9 +116,11 @@ The build uses these inputs:
 - The embedded `zero.alt` glyph, which matches the corresponding Office Code
   Pro D dotted zero. The D fonts are not needed for the build.
 - Matching Source Code Pro weights in `source-code-pro/OTF/`. Uprights use
-  `g`; italics use the double-storey `g.a` alternate. Each donor is scaled
-  to the target x-height, adjusted from Source Code Pro's 11-degree italic
-  slant to Office Code Pro's 9-degree slant, and kept at a 600-unit advance.
+  `g`; italics use the double-storey `g.a` alternate. All styles also import
+  `dollar` as `dollar.ss03` from the matching upright or italic donor. Both
+  imported glyphs are scaled to the target x-height, adjusted from Source Code
+  Pro's 11-degree italic slant to Office Code Pro's 9-degree slant, and kept at
+  a 600-unit advance.
 - Matching Fira Code Light, Regular, Medium, and Bold OTFs, including for italic
   styles. Ligature outlines retain Fira Code's upright design.
 
@@ -119,7 +128,9 @@ The build uses these inputs:
 `LigatureCreator` directly. This replaces the old edits to `prefixed_fonts`
 and `renamed_fonts` in the cloned `build.py`. The driver filters ligatures in
 memory, preserves Office Code Pro's ordinary punctuation, adds labeled
-`ss01`/`ss02` features, and writes consistent names and bold/italic metadata.
+`ss01`/`ss02`/`ss03` features, and writes consistent names and bold/italic metadata.
+Stylistic variants are applied after programming ligatures so `ss03` also works
+with `calt` enabled.
 The output explicitly uses OpenType layout tables and omits inherited Apple
 AAT layout tables.
 It also repairs upstream Light/Bold `GDEF` classifications that incorrectly
@@ -152,13 +163,14 @@ ligature glyphs cause a build failure.
 
 [scripts/validate_fonts.py](scripts/validate_fonts.py) checks:
 
-- All retained ligatures with `calt` on and off, for Latin and common-script text.
-- Every exclusion and all four combinations of zero/g features.
+- All retained ligatures with `calt` and `ss03` on and off, for Latin and common-script text.
+- Every exclusion and all eight combinations of zero/g/dollar features.
 - Feature independence, default behavior, cell counts, and 600-unit advances.
 - Printable ASCII, backtick contexts, Markdown code spans, and spacing accents
   with default features and ligatures on/off; preserved combining mark data.
 - Preserved source outlines and character coverage, visible ligature outlines,
-  donor g height, font naming, style flags, and the absence of AAT layout tables.
+  donor g height, the alternate dollar's donor outline and slant, font naming,
+  style flags, and the absence of AAT layout tables.
 
 Validation uses HarfBuzz's OpenType shaper and also CoreText when available.
 The checked source revisions were Office Code Pro `d8fe9b1`, Source Code Pro
