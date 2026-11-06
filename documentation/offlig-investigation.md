@@ -82,4 +82,4 @@ uprights and italics. It offers both zeros in the same file through `ss01`.
 `make check` rejects outputs with `morx`, `mort`, or `feat`; verifies the actual
 binary name/style records; and shapes every retained ligature and every
 excluded sequence in all eight new fonts. Both OpenType and CoreText are
-checked when available, including all zero/g feature combinations.
+checked when available, including all zero/g/dollar feature combinations.

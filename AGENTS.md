@@ -12,6 +12,10 @@
 - Source Code Pro donors are in `source-code-pro/OTF/` (release branch).
   Use matching weights: upright `g`, italic `g.a`. Match Office Code Pro's
   x-height and italic angle, and keep the 600-unit advance.
+- Keep Office Code Pro's diagonal `dollar` (U+0024) as the default. `ss03`
+  selects Source Code Pro's conventional `dollar.ss03` in every style, using
+  the matching weight and upright/italic donor and the same x-height/slant
+  adjustment as `g.ss02`. Apply stylistic variants after programming ligatures.
 - Use Ligaturizer's API without modifying cloned source repositories.
   Select Fira Code by weight explicitly, including for italic styles.
 - Keep the ligature exclusions: `&&`, `~@`, `\/`, `.?`, `?:`, `?=`,
