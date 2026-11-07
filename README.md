@@ -120,7 +120,9 @@ The build uses these inputs:
   `dollar` as `dollar.ss03` from the matching upright or italic donor. Both
   imported glyphs are scaled to the target x-height, adjusted from Source Code
   Pro's 11-degree italic slant to Office Code Pro's 9-degree slant, and kept at
-  a 600-unit advance.
+  a 600-unit advance. Their horizontal placement is aligned using each font's
+  `x` center with the slant removed. This shifts the italic imports 60 units
+  right to match Office Code Pro's spacing; upright placement is unchanged.
 - Matching Fira Code Light, Regular, Medium, and Bold OTFs, including for italic
   styles. Ligature outlines retain Fira Code's upright design.
 
@@ -169,8 +171,9 @@ ligature glyphs cause a build failure.
 - Printable ASCII, backtick contexts, Markdown code spans, and spacing accents
   with default features and ligatures on/off; preserved combining mark data.
 - Preserved source outlines and character coverage, visible ligature outlines,
-  donor g height, the alternate dollar's donor outline and slant, font naming,
-  style flags, and the absence of AAT layout tables.
+  donor g/dollar outlines, scale, slant, and horizontal placement relative to
+  `x`; g variants in words including `engine`, with fixed cell advances.
+- Font naming, style flags, and the absence of AAT layout tables.
 
 Validation uses HarfBuzz's OpenType shaper and also CoreText when available.
 The checked source revisions were Office Code Pro `d8fe9b1`, Source Code Pro
