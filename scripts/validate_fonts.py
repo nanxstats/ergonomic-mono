@@ -115,9 +115,12 @@ def validate_outlines(font, source, donor, style):
     for name in ("zero", "zero.alt", "g", "x", "ampersand", "question", "less", "greater"):
         require(font[name].foreground == source[name].foreground, "Changed source outline: " + name)
     require(font["zero"].foreground != font["zero.alt"].foreground, "Identical zero variants")
+    require(font["g.ss02"].unicode == -1, "G alternate must be unencoded")
+    require(font["g.ss02"].width == 600, "Incorrect g alternate advance")
     require(font["g"].foreground != font["g.ss02"].foreground, "Identical g variants")
     donor_g = donor["g.a" if style.endswith("Italic") else "g"]
     require(len(font["g.ss02"].foreground) == len(donor_g.foreground), "Lost donor contours")
+    validate_donor_outline(font, source, donor, "g.ss02", donor_g.glyphname)
     height_scale = source["x"].boundingBox()[3] / donor["x"].boundingBox()[3]
     bounds = font["g.ss02"].boundingBox()
     donor_bounds = donor_g.boundingBox()
@@ -126,6 +129,28 @@ def validate_outlines(font, source, donor, style):
                 "Incorrect donor height/descender scaling")
     require(bounds[1] >= -font.os2_windescent and bounds[3] <= font.os2_winascent,
             "Alternate g exceeds vertical metrics")
+
+
+def validate_donor_outline(font, source, donor, target_name, donor_name):
+    height_scale = source["x"].boundingBox()[3] / donor["x"].boundingBox()[3]
+    width_scale = source["space"].width / donor["space"].width
+    outlines = []
+    for face, name, x_scale, y_scale in (
+        (font, target_name, width_scale, height_scale), (donor, donor_name, 1, 1),
+    ):
+        slant = math.tan(math.radians(-face.italicangle))
+        transform = (1 / x_scale, 0, -slant / x_scale, 1 / y_scale, 0, 0)
+        reference = face["x"].foreground.dup()
+        reference.transform(transform)
+        left, _, right, _ = reference.boundingBox()
+        outline = face[name].foreground.dup()
+        outline.transform(transform)
+        # Compare relative to each font's unslanted x center, in whole font units.
+        outline.transform((1, 0, 0, 1, -round((left + right) / 2), 0))
+        outlines.append(outline)
+    # Export can replace straight cubic segments with lines and round coordinates.
+    require(outlines[0].similar(outlines[1], 1.5),
+            "Incorrect donor outline, scale, slant, or spacing: " + target_name)
 
 
 def validate_dollar(font, source, donor):
@@ -138,16 +163,7 @@ def validate_dollar(font, source, donor):
     original = donor["dollar"]
     require(len(glyph.foreground) == len(original.foreground) > 0,
             "Lost donor dollar contours")
-    height_scale = source["x"].boundingBox()[3] / donor["x"].boundingBox()[3]
-    width_scale = source["space"].width / donor["space"].width
-    target_slant = math.tan(math.radians(-font.italicangle))
-    donor_slant = math.tan(math.radians(-donor.italicangle))
-    outline = glyph.foreground.dup()
-    outline.transform((1 / width_scale, 0, -target_slant / width_scale, 1 / height_scale, 0, 0))
-    expected = original.foreground.dup()
-    expected.transform((1, 0, -donor_slant, 1, 0, 0))
-    # Export can replace straight cubic segments with lines and round coordinates.
-    require(outline.similar(expected, 1.5), "Incorrect donor dollar outline, scale, or slant")
+    validate_donor_outline(font, source, donor, "dollar.ss03", "dollar")
     bounds = glyph.boundingBox()
     require(bounds[1] >= -font.os2_windescent and bounds[3] <= font.os2_winascent,
             "Dollar alternate exceeds vertical metrics")
@@ -187,6 +203,13 @@ def validate_spacing(hb_shape, path, shapers):
             for features in ("", "calt=0,liga=0", "calt=1,liga=1",
                              "ss03=1,calt=0,liga=0", "ss03=1,calt=1,liga=1"):
                 shape(hb_shape, path, samples, features, shaper, script)
+            g_samples = ["engine", "engineering", "singing", "gaggling", "ngn", "igi", "gg"]
+            for double, calt in product((0, 1), repeat=2):
+                features = "ss02=%d,calt=%d,liga=%d" % (double, calt, calt)
+                rows = shape(hb_shape, path, g_samples, features, shaper, script)
+                for text, row in zip(g_samples, rows):
+                    expected = ["g.ss02" if char == "g" and double else char for char in text]
+                    require(row == expected, "G variant failed in word: " + text)
 
 
 def validate_shaping(hb_shape, path, texts, shapers):
@@ -259,7 +282,7 @@ def main():
             validate_dollar(font, source, donor)
             validate_shaping(args.hb_shape, path, texts, shapers)
             validate_spacing(args.hb_shape, path, shapers)
-            print("PASS %s: ss03 dollar, %d ligatures, 10 exclusions, 8 variant combinations, ASCII/accent spacing (%s)" % (
+            print("PASS %s: ss02/ss03 outlines and spacing, %d ligatures, 10 exclusions, 8 variant combinations, ASCII/accent spacing (%s)" % (
                 path.name, len(texts), ", ".join(shapers)
             ))
         finally:

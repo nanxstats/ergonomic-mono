@@ -30,6 +30,13 @@ def add_variant(font, feature, original, alternate):
     font[original].addPosSub(lookup + ".sub", alternate)
 
 
+def unslanted_x_center(font, slant):
+    outline = font["x"].foreground.dup()
+    outline.transform((1, 0, -slant, 1, 0, 0))
+    left, _, right, _ = outline.boundingBox()
+    return (left + right) / 2
+
+
 def import_donor_glyph(font, donor, donor_name, target_name):
     donor.em = font.em
     donor.selection.select(donor_name)
@@ -45,12 +52,16 @@ def import_donor_glyph(font, donor, donor_name, target_name):
     donor_slant = math.tan(math.radians(-donor.italicangle))
     target_slant = math.tan(math.radians(-font.italicangle))
     shear = target_slant * height_scale - donor_slant * width_scale
-    glyph.transform((width_scale, 0, shear, height_scale, 0, 0))
+    # Italic x centers differ by 60 units after removing the slant. Align these
+    # references to preserve donor spacing without centering g's ear/descender.
+    x_offset = round(unslanted_x_center(font, target_slant)
+                     - width_scale * unslanted_x_center(donor, donor_slant))
+    glyph.transform((width_scale, 0, shear, height_scale, x_offset, 0))
     glyph.width = font["space"].width
     glyph.round()
     glyph.autoHint()
-    print("  %s: %s, height scale %.4f, slant %.1f degrees" % (
-        target_name, donor_name, height_scale, font.italicangle
+    print("  %s: %s, height scale %.4f, slant %.1f degrees, x offset %d" % (
+        target_name, donor_name, height_scale, font.italicangle, x_offset
     ))
 
 
