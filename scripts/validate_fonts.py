@@ -2,6 +2,7 @@
 """Validate generated outlines, metadata and actual HarfBuzz/CoreText shaping."""
 
 import argparse
+from contextlib import closing
 from itertools import product
 import json
 import math
@@ -15,6 +16,7 @@ import fontforge
 
 from font_config import EXCLUDED_LIGATURES, FAMILY, POSTSCRIPT_FAMILY, STYLES
 from font_config import MISSING_FIRA_LIGATURES, load_ligatures, style_names
+from font_sources import open_sources
 
 
 SPACING_ACCENTS = "`\u00a8\u00af\u00b4\u00b8\u02c6\u02c7\u02d8\u02d9\u02da\u02dc"
@@ -43,7 +45,7 @@ def validate_metadata(path, font, style):
     italic, bold = style.endswith("Italic"), style.startswith("Bold")
     require(struct.unpack_from(">H", tables["head"], 44)[0] & 3 == bold + 2 * italic,
             "Incorrect macStyle bold/italic bits")
-    require(font.os2_weight == STYLES[style][0], "Incorrect weight class")
+    require(font.os2_weight == STYLES[style], "Incorrect weight class")
     expected_selection = int(italic) + 32 * bold
     require(font.os2_stylemap & 97 == (expected_selection or 64), "Incorrect fsSelection bits")
     require(font.italicangle == (-9 if italic else 0), "Incorrect italic angle")
@@ -83,7 +85,33 @@ def validate_metadata(path, font, style):
     require(labels.get("ss03") == "Conventional dollar", "Missing ss03 label")
 
 
-def validate_outlines(font, source, donor, style):
+def validate_retina_outline(glyph, regular, medium):
+    name = glyph.glyphname
+    actual, light, heavy = (g.foreground for g in (glyph, regular, medium))
+    require(not actual.selfIntersects(), "Self-intersecting Retina outline: " + name)
+    if name in ("ellipsis", "second"):
+        boxes = sorted(c.boundingBox() for c in actual)
+        require(len(boxes) == (3 if name == "ellipsis" else 2)
+                and all(a[2] < b[0] for a, b in zip(boxes, boxes[1:])),
+                "Lost separate dots or primes: " + name)
+        # Medium merges these horizontally, but its vertical extrema are intact.
+        bounds = [(box[1::2], light.boundingBox()[1::2], heavy.boundingBox()[1::2]) for box in boxes]
+    elif name == "uni1E97":
+        # The right dot can join the t as its stem thickens.
+        require(2 <= len(actual) <= 3, "Lost dieresis on Retina t")
+        bounds = [(actual.boundingBox(), light.boundingBox(), heavy.boundingBox())]
+    else:
+        require(len(actual) == len(light) == len(heavy), "Lost Retina contours: " + name)
+        if name == "percent":
+            heavy[4], heavy[5] = heavy[5], heavy[4]
+        bounds = [(c.boundingBox(), a.boundingBox(), b.boundingBox())
+                  for c, a, b in zip(actual, light, heavy)]
+    for result, start, end in bounds:
+        require(all(abs(v - (a + b) / 2) <= 1.5 for v, a, b in zip(result, start, end)),
+                "Retina outline is off the Regular/Medium midpoint: " + name)
+
+
+def validate_outlines(font, source, medium, donor, style):
     require(font.em == source.em == 1000, "Unexpected units per em")
     require(font["space"].width == 600, "Unexpected cell width")
     for glyph in font.glyphs():
@@ -97,14 +125,19 @@ def validate_outlines(font, source, donor, style):
         if glyph.glyphname.startswith("CR."):
             require(len(glyph.foreground) == 0, "Ligature spacer has a visible outline")
     for original in source.glyphs():
+        if medium is not None:
+            name = original.glyphname
+            require(name in font, "Lost Retina glyph: " + name)
+            validate_retina_outline(font[name], original, medium[name])
         if original.unicode >= 0:
             require(original.unicode in font, "Lost character U+%04X" % original.unicode)
             char = chr(original.unicode)
             combining = unicodedata.category(char).startswith("M")
             if 0x20 <= original.unicode < 0x7f or char in SPACING_ACCENTS or combining:
                 glyph = font[original.unicode]
-                require(glyph.foreground == original.foreground,
-                        "Changed source outline: " + original.glyphname)
+                if medium is None:
+                    require(glyph.foreground == original.foreground,
+                            "Changed source outline: " + original.glyphname)
                 require(glyph.width == original.width,
                         "Changed source advance: " + original.glyphname)
                 if combining:
@@ -112,16 +145,17 @@ def validate_outlines(font, source, donor, style):
                             "Changed combining mark class: " + original.glyphname)
                     require(glyph.anchorPoints == original.anchorPoints,
                             "Changed combining mark anchors: " + original.glyphname)
-    for name in ("zero", "zero.alt", "g", "x", "ampersand", "question", "less", "greater"):
-        require(font[name].foreground == source[name].foreground, "Changed source outline: " + name)
+    if medium is None:
+        for name in ("zero", "zero.alt", "g", "x", "ampersand", "question", "less", "greater"):
+            require(font[name].foreground == source[name].foreground, "Changed source outline: " + name)
     require(font["zero"].foreground != font["zero.alt"].foreground, "Identical zero variants")
     require(font["g.ss02"].unicode == -1, "G alternate must be unencoded")
     require(font["g.ss02"].width == 600, "Incorrect g alternate advance")
     require(font["g"].foreground != font["g.ss02"].foreground, "Identical g variants")
     donor_g = donor["g.a" if style.endswith("Italic") else "g"]
     require(len(font["g.ss02"].foreground) == len(donor_g.foreground), "Lost donor contours")
-    validate_donor_outline(font, source, donor, "g.ss02", donor_g.glyphname)
-    height_scale = source["x"].boundingBox()[3] / donor["x"].boundingBox()[3]
+    validate_donor_outline(font, donor, "g.ss02", donor_g.glyphname)
+    height_scale = font["x"].boundingBox()[3] / donor["x"].boundingBox()[3]
     bounds = font["g.ss02"].boundingBox()
     donor_bounds = donor_g.boundingBox()
     for index in (1, 3):
@@ -131,9 +165,9 @@ def validate_outlines(font, source, donor, style):
             "Alternate g exceeds vertical metrics")
 
 
-def validate_donor_outline(font, source, donor, target_name, donor_name):
-    height_scale = source["x"].boundingBox()[3] / donor["x"].boundingBox()[3]
-    width_scale = source["space"].width / donor["space"].width
+def validate_donor_outline(font, donor, target_name, donor_name):
+    height_scale = font["x"].boundingBox()[3] / donor["x"].boundingBox()[3]
+    width_scale = font["space"].width / donor["space"].width
     outlines = []
     for face, name, x_scale, y_scale in (
         (font, target_name, width_scale, height_scale), (donor, donor_name, 1, 1),
@@ -153,7 +187,7 @@ def validate_donor_outline(font, source, donor, target_name, donor_name):
             "Incorrect donor outline, scale, slant, or spacing: " + target_name)
 
 
-def validate_dollar(font, source, donor):
+def validate_dollar(font, donor):
     require(font[0x24].glyphname == "dollar", "Incorrect dollar character mapping")
     require("dollar.ss03" in font, "Missing dollar alternate")
     glyph = font["dollar.ss03"]
@@ -163,7 +197,7 @@ def validate_dollar(font, source, donor):
     original = donor["dollar"]
     require(len(glyph.foreground) == len(original.foreground) > 0,
             "Lost donor dollar contours")
-    validate_donor_outline(font, source, donor, "dollar.ss03", "dollar")
+    validate_donor_outline(font, donor, "dollar.ss03", "dollar")
     bounds = glyph.boundingBox()
     require(bounds[1] >= -font.os2_windescent and bounds[3] <= font.os2_winascent,
             "Dollar alternate exceeds vertical metrics")
@@ -212,6 +246,17 @@ def validate_spacing(hb_shape, path, shapers):
                     require(row == expected, "G variant failed in word: " + text)
 
 
+def validate_ligature_outlines(hb_shape, path, font, fira, specs, texts):
+    rows = shape(hb_shape, path, texts, "calt=1", "ot")
+    fira.em = font.em
+    for text, row in zip(texts, rows):
+        donor = fira[specs[text]["firacode_ligature_name"]]
+        outline = donor.foreground
+        outline.transform((font["space"].width / donor.width, 0, 0, 1, 0, 0))
+        require(font[row[-1]].foreground.similar(outline, 1.5),
+                "Incorrect Fira Code ligature outline: " + text)
+
+
 def validate_shaping(hb_shape, path, texts, shapers):
     excluded = sorted(EXCLUDED_LIGATURES)
     samples = texts + excluded
@@ -254,6 +299,7 @@ def validate_shaping(hb_shape, path, texts, shapers):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hb-shape", default="hb-shape")
+    parser.add_argument("--fonttools", default="fonttools")
     parser.add_argument("--office-dir", type=Path, default=Path("Office-Code-Pro"))
     parser.add_argument("--source-dir", type=Path, default=Path("source-code-pro"))
     parser.add_argument("--ligaturizer-dir", type=Path, default=Path("Ligaturizer"))
@@ -267,29 +313,20 @@ def main():
     specs = load_ligatures(args.ligaturizer_dir)
     for style in STYLES:
         path = args.output_dir / (POSTSCRIPT_FAMILY + "-" + style + ".otf")
-        font = fontforge.open(str(path))
-        source_path = args.office_dir / "Fonts/Office Code Pro/OTF" / ("OfficeCodePro-" + style + ".otf")
-        source = fontforge.open(str(source_path))
-        donor = fontforge.open(str(args.source_dir / "OTF" / ("SourceCodePro-" + STYLES[style][1] + ".otf")))
-        weight = style.removesuffix("Italic")
-        fira = fontforge.open(str(args.ligaturizer_dir / "fonts/fira/distr/otf" / ("FiraCode-" + weight + ".otf")))
-        try:
+        with closing(fontforge.open(str(path))) as font, open_sources(args, style) as sources:
+            source, medium, donor, fira = sources
             missing = {text for text, spec in specs.items() if spec["firacode_ligature_name"] not in fira}
             require(missing <= MISSING_FIRA_LIGATURES, "Unexpected missing donor ligatures")
             texts = sorted(specs.keys() - missing)
             validate_metadata(path, font, style)
-            validate_outlines(font, source, donor, style)
-            validate_dollar(font, source, donor)
+            validate_outlines(font, source, medium, donor, style)
+            validate_dollar(font, donor)
+            validate_ligature_outlines(args.hb_shape, path, font, fira, specs, texts)
             validate_shaping(args.hb_shape, path, texts, shapers)
             validate_spacing(args.hb_shape, path, shapers)
             print("PASS %s: ss02/ss03 outlines and spacing, %d ligatures, 10 exclusions, 8 variant combinations, ASCII/accent spacing (%s)" % (
                 path.name, len(texts), ", ".join(shapers)
             ))
-        finally:
-            font.close()
-            source.close()
-            donor.close()
-            fira.close()
 
 
 if __name__ == "__main__":

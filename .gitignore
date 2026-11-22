@@ -5,3 +5,8 @@ build/
 dist/
 wheels/
 *.egg-info
+
+# Upstream checkouts fetched by make sources
+/Office-Code-Pro/
+/source-code-pro/
+/Ligaturizer/

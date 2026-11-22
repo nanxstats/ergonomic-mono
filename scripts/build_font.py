@@ -8,11 +8,11 @@ from pathlib import Path
 import tempfile
 import unicodedata
 
-import fontforge
 import psMat
 
 from font_config import FAMILY, POSTSCRIPT_FAMILY, STYLES, MISSING_FIRA_LIGATURES
 from font_config import load_ligatures, style_names
+from font_sources import interpolate_retina, office_font, open_sources
 
 
 def add_variant(font, feature, original, alternate):
@@ -71,7 +71,7 @@ def set_names(font, style, donor):
     font.fontname = POSTSCRIPT_FAMILY + "-" + style
     font.fullname = FAMILY + " " + preferred
     font.weight = style.removesuffix("Italic")
-    font.os2_weight = STYLES[style][0]
+    font.os2_weight = STYLES[style]
     font.os2_stylemap = (1 if style.endswith("Italic") else 0) | (
         32 if style.startswith("Bold") else 0
     )
@@ -136,18 +136,14 @@ def repair_spacing_marks(font):
 
 def build(args):
     style = args.style
-    weight = style.removesuffix("Italic")
-    source = args.office_dir / "Fonts/Office Code Pro/OTF" / ("OfficeCodePro-" + style + ".otf")
-    donor_path = args.source_dir / "OTF" / ("SourceCodePro-" + STYLES[style][1] + ".otf")
-    fira_path = args.ligaturizer_dir / "fonts/fira/distr/otf" / ("FiraCode-" + weight + ".otf")
     specs = load_ligatures(args.ligaturizer_dir)
     from ligaturize import LigatureCreator
 
-    font = fontforge.open(str(source))
-    donor = fontforge.open(str(donor_path))
-    fira = fontforge.open(str(fira_path))
-    try:
+    with open_sources(args, style) as (font, medium, donor, fira):
         print("Building " + style)
+        if medium is not None:
+            with office_font(args.office_dir, style.replace("Retina", "Bold")) as bold:
+                interpolate_retina(font, medium, bold)
         for name in ("zero", "zero.alt", "g", "dollar", "x", "space"):
             if name not in font:
                 raise ValueError("Missing source glyph: " + name)
@@ -182,10 +178,6 @@ def build(args):
             # Do not emit inherited AAT tables that could override GSUB shaping.
             font.generate(str(temporary), flags=("opentype", "round", "no-FFTM-table"))
             os.replace(temporary, args.output)
-    finally:
-        font.close()
-        donor.close()
-        fira.close()
 
 
 def parse_args():
@@ -194,6 +186,7 @@ def parse_args():
     parser.add_argument("--office-dir", type=Path, default=Path("Office-Code-Pro"))
     parser.add_argument("--source-dir", type=Path, default=Path("source-code-pro"))
     parser.add_argument("--ligaturizer-dir", type=Path, default=Path("Ligaturizer"))
+    parser.add_argument("--fonttools", default="fonttools")
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 

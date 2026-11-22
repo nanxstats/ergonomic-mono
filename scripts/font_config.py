@@ -7,14 +7,10 @@ from pathlib import Path
 FAMILY = "Ergonomic Mono"
 POSTSCRIPT_FAMILY = "ErgonomicMono"
 STYLES = {
-    "Light": (300, "Light"),
-    "LightItalic": (300, "LightIt"),
-    "Regular": (400, "Regular"),
-    "RegularItalic": (400, "It"),
-    "Medium": (500, "Medium"),
-    "MediumItalic": (500, "MediumIt"),
-    "Bold": (700, "Bold"),
-    "BoldItalic": (700, "BoldIt"),
+    weight + suffix: weight_class
+    for weight, weight_class in (("Light", 300), ("Regular", 400), ("Retina", 450),
+                                 ("Medium", 500), ("Bold", 700))
+    for suffix in ("", "Italic")
 }
 EXCLUDED_LIGATURES = frozenset(
     ("&&", "~@", "\\/", ".?", "?:", "?=", "?.", "??", ";;", "/\\")
