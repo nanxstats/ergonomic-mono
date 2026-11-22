@@ -4,24 +4,28 @@ SHELL := /bin/bash
 .DELETE_ON_ERROR:
 
 FONTFORGE ?= fontforge
+FONTTOOLS ?= fonttools
 HB_SHAPE ?= hb-shape
 LIGATURIZER_DIR := Ligaturizer
 OFFICE_DIR := Office-Code-Pro
 SOURCE_DIR := source-code-pro
 OUTPUT_DIR := fonts
 
-STYLES := Light LightItalic Regular RegularItalic Medium MediumItalic Bold BoldItalic
+OFFICE_STYLES := Light LightItalic Regular RegularItalic Medium MediumItalic Bold BoldItalic
+STYLES := $(OFFICE_STYLES) Retina RetinaItalic
 DONOR_STYLES := Light LightIt Regular It Medium MediumIt Bold BoldIt
-FIRA_WEIGHTS := Light Regular Medium Bold
+FIRA_WEIGHTS := Light Regular Retina Medium Bold
 OFFICE_OTF_DIR := $(OFFICE_DIR)/Fonts/Office\ Code\ Pro/OTF
-SOURCE_FONTS := $(addprefix $(OFFICE_OTF_DIR)/OfficeCodePro-,$(addsuffix .otf,$(STYLES)))
+FIRA_OTF_DIR := $(LIGATURIZER_DIR)/fonts/fira/distr/otf
+SOURCE_FONTS := $(addprefix $(OFFICE_OTF_DIR)/OfficeCodePro-,$(addsuffix .otf,$(OFFICE_STYLES)))
 DONOR_FONTS := $(addprefix $(SOURCE_DIR)/OTF/SourceCodePro-,$(addsuffix .otf,$(DONOR_STYLES)))
-FIRA_FONTS := $(addprefix $(LIGATURIZER_DIR)/fonts/fira/distr/otf/FiraCode-,$(addsuffix .otf,$(FIRA_WEIGHTS)))
+VARIABLE_DONORS := $(addprefix $(SOURCE_DIR)/VF/SourceCodeVF-,Upright.otf Italic.otf)
+FIRA_FONTS := $(addprefix $(FIRA_OTF_DIR)/FiraCode-,$(addsuffix .otf,$(FIRA_WEIGHTS)))
 LIGATURIZER_SCRIPTS := $(addprefix $(LIGATURIZER_DIR)/,ligaturize.py ligatures.py char_dict.py)
 FINAL_FONTS := $(addprefix $(OUTPUT_DIR)/ErgonomicMono-,$(addsuffix .otf,$(STYLES)))
 LICENSES := $(addprefix $(OUTPUT_DIR)/,OFL-Office-Code-Pro.txt OFL-Source-Code-Pro.txt OFL-Fira-Code.txt)
 
-.PHONY: all build check deps sources clean
+.PHONY: all build check deps retina-deps sources clean
 
 all: check
 
@@ -29,13 +33,16 @@ build: $(FINAL_FONTS) $(LICENSES)
 
 check: build
 	$(FONTFORGE) -skippyfile -skippyplug -lang=py -script scripts/validate_fonts.py --hb-shape "$(HB_SHAPE)" \
-		--office-dir "$(OFFICE_DIR)" --source-dir "$(SOURCE_DIR)" \
+		--office-dir "$(OFFICE_DIR)" --source-dir "$(SOURCE_DIR)" --fonttools "$(FONTTOOLS)" \
 		--ligaturizer-dir "$(LIGATURIZER_DIR)" --output-dir "$(OUTPUT_DIR)"
 
 deps:
 	@command -v "$(FONTFORGE)" >/dev/null || { echo "Install FontForge (brew install fontforge)." >&2; exit 1; }
 
-sources: $(SOURCE_FONTS) $(DONOR_FONTS) $(FIRA_FONTS) $(LIGATURIZER_SCRIPTS)
+retina-deps:
+	@command -v "$(FONTTOOLS)" >/dev/null || { echo "Install FontTools for Retina (brew install fonttools)." >&2; exit 1; }
+
+sources: $(SOURCE_FONTS) $(DONOR_FONTS) $(VARIABLE_DONORS) $(FIRA_FONTS) $(LIGATURIZER_SCRIPTS)
 
 $(OUTPUT_DIR):
 	mkdir -p "$@"
@@ -55,7 +62,7 @@ $(LIGATURIZER_DIR)/fonts/fira/.git: | $(LIGATURIZER_DIR)/.git
 $(SOURCE_FONTS) $(OFFICE_DIR)/LICENSE.txt: | $(OFFICE_DIR)/.git
 	@test -f "$@"
 
-$(DONOR_FONTS) $(SOURCE_DIR)/LICENSE.md: | $(SOURCE_DIR)/.git
+$(DONOR_FONTS) $(VARIABLE_DONORS) $(SOURCE_DIR)/LICENSE.md: | $(SOURCE_DIR)/.git
 	@test -f "$@"
 
 $(LIGATURIZER_SCRIPTS): | $(LIGATURIZER_DIR)/.git
@@ -64,9 +71,14 @@ $(LIGATURIZER_SCRIPTS): | $(LIGATURIZER_DIR)/.git
 $(FIRA_FONTS) $(LIGATURIZER_DIR)/fonts/fira/LICENSE: | $(LIGATURIZER_DIR)/fonts/fira/.git
 	@test -f "$@"
 
-$(FINAL_FONTS): $(OUTPUT_DIR)/ErgonomicMono-%.otf: Makefile scripts/build_font.py scripts/font_config.py $(SOURCE_FONTS) $(DONOR_FONTS) $(FIRA_FONTS) $(LIGATURIZER_SCRIPTS) | deps $(OUTPUT_DIR)
-	$(FONTFORGE) -skippyfile -skippyplug -lang=py -script scripts/build_font.py --style "$*" \
-		--office-dir "$(OFFICE_DIR)" --source-dir "$(SOURCE_DIR)" \
+$(OUTPUT_DIR)/ErgonomicMono-Retina.otf: $(SOURCE_DIR)/VF/SourceCodeVF-Upright.otf | retina-deps
+$(OUTPUT_DIR)/ErgonomicMono-RetinaItalic.otf: $(SOURCE_DIR)/VF/SourceCodeVF-Italic.otf | retina-deps
+$(filter-out %Italic.otf,$(FINAL_FONTS)): $(OUTPUT_DIR)/ErgonomicMono-%.otf: $(FIRA_OTF_DIR)/FiraCode-%.otf
+$(filter %Italic.otf,$(FINAL_FONTS)): $(OUTPUT_DIR)/ErgonomicMono-%Italic.otf: $(FIRA_OTF_DIR)/FiraCode-%.otf
+
+$(FINAL_FONTS): $(OUTPUT_DIR)/ErgonomicMono-%.otf: Makefile scripts/build_font.py scripts/font_config.py scripts/font_sources.py $(SOURCE_FONTS) $(DONOR_FONTS) $(LIGATURIZER_SCRIPTS) | deps $(OUTPUT_DIR)
+	set -o pipefail; $(FONTFORGE) -skippyfile -skippyplug -lang=py -script scripts/build_font.py --style "$*" \
+		--office-dir "$(OFFICE_DIR)" --source-dir "$(SOURCE_DIR)" --fonttools "$(FONTTOOLS)" \
 		--ligaturizer-dir "$(LIGATURIZER_DIR)" --output "$@" \
 		2>&1 | sed '/^This contextual rule applies no lookups\.$$/d'
 

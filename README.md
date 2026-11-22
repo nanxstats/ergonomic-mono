@@ -24,6 +24,8 @@ Or install the `fonts/ErgonomicMono-*.otf` files using your OS font manager.
 ## Configure
 
 Select **Ergonomic Mono** in your editor or terminal.
+Choose **Retina** (450) for a weight halfway between Regular (400) and Medium
+(500). Retina comes in both upright and italic.
 Restart the application after installing or replacing fonts.
 
 | Feature | Disabled | Enabled |
@@ -47,7 +49,7 @@ Programming ligatures use `calt`; enabling `liga` alone does not activate them.
 Set `calt=0` to disable ligatures while retaining your zero, g, and dollar preferences.
 
 Open [the local specimen](documentation/specimen.html) in a browser to compare
-all eight styles and toggle the features without installing the fonts.
+all ten styles and toggle the features without installing the fonts.
 
 ### VS Code
 
@@ -80,21 +82,22 @@ See [Ghostty's font feature syntax](https://ghostty.org/docs/config/reference#fo
 
 ## Build
 
-Requirements: Git, Make, FontForge with Python 3.9+ support, and HarfBuzz's
-`hb-shape` for validation. On macOS, these are available through Homebrew:
+The build uses Git, Make, FontForge with Python 3.9+ support, and FontTools
+with `varLib.instancer --downgrade-cff2`. Validation uses HarfBuzz's `hb-shape`.
+On macOS, install the font tools with Homebrew.
 
 ```sh
-brew install fontforge harfbuzz
+brew install fontforge fonttools harfbuzz
 make
 ```
 
-`make` builds and validates the fonts. Other targets:
+`make` builds and validates the fonts.
 
-- `make build`: generate the eight fonts and copy their upstream licenses.
-- `make check`: build if needed, then validate the generated fonts.
-- `make sources`: fetch or verify the source fonts and Ligaturizer.
-- `make clean`: remove only this project's eight generated fonts and license
-  copies. Source clones and unrelated files are retained.
+- `make build` generates the ten fonts and copies their upstream licenses.
+- `make check` builds if needed and validates the generated fonts.
+- `make sources` fetches or verifies the source fonts and Ligaturizer.
+- `make clean` removes this project's ten generated fonts and license copies.
+  Source clones and unrelated files are retained.
 
 A populated checkout builds offline. Missing dependencies are cloned over HTTPS:
 
@@ -112,19 +115,24 @@ submodules are unnecessary.
 The build uses these inputs:
 
 - Slashed zero Office Code Pro OTFs in
-  `Office-Code-Pro/Fonts/Office Code Pro/OTF/`.
+  `Office-Code-Pro/Fonts/Office Code Pro/OTF/`. Retina interpolates the
+  Regular and Medium outlines separately for upright and italic. For the
+  ellipsis and double prime, the build blends Regular with Bold to the same
+  target stem width, preserving the separate dots and strokes.
 - The embedded `zero.alt` glyph, which matches the corresponding Office Code
   Pro D dotted zero. The D fonts are not needed for the build.
-- Matching Source Code Pro weights in `source-code-pro/OTF/`. Uprights use
-  `g`; italics use the double-storey `g.a` alternate. All styles also import
+- Matching Source Code Pro weights in `source-code-pro/OTF/`. For Retina,
+  FontTools takes a `wght=450` instance from each of Adobe's upright and
+  italic variable fonts in `source-code-pro/VF/`. Uprights use `g` and
+  italics use the double-storey `g.a` alternate. All styles also import
   `dollar` as `dollar.ss03` from the matching upright or italic donor. Both
   imported glyphs are scaled to the target x-height, adjusted from Source Code
   Pro's 11-degree italic slant to Office Code Pro's 9-degree slant, and kept at
   a 600-unit advance. Their horizontal placement is aligned using each font's
   `x` center with the slant removed. This shifts the italic imports 60 units
   right to match Office Code Pro's spacing; upright placement is unchanged.
-- Matching Fira Code Light, Regular, Medium, and Bold OTFs, including for italic
-  styles. Ligature outlines retain Fira Code's upright design.
+- Matching Fira Code Light, Regular, Retina, Medium, and Bold OTFs, including
+  for italic styles. Ligature outlines retain Fira Code's upright design.
 
 [scripts/build_font.py](scripts/build_font.py) calls Ligaturizer's
 `LigatureCreator` directly. This replaces the old edits to `prefixed_fonts`
@@ -146,11 +154,12 @@ The generated files are:
 | --- | --- | --- |
 | Light | `ErgonomicMono-Light.otf` | `ErgonomicMono-LightItalic.otf` |
 | Regular | `ErgonomicMono-Regular.otf` | `ErgonomicMono-RegularItalic.otf` |
+| Retina | `ErgonomicMono-Retina.otf` | `ErgonomicMono-RetinaItalic.otf` |
 | Medium | `ErgonomicMono-Medium.otf` | `ErgonomicMono-MediumItalic.otf` |
 | Bold | `ErgonomicMono-Bold.otf` | `ErgonomicMono-BoldItalic.otf` |
 
 All output files land in `fonts/`. Every style belongs to the preferred family
-`Ergonomic Mono`; Light and Medium also have legacy weight-specific family
+`Ergonomic Mono`. Light, Retina, and Medium also have legacy weight-specific family
 names for applications that only support four-style families.
 
 ### Ligature selection and validation
@@ -166,6 +175,7 @@ ligature glyphs cause a build failure.
 [scripts/validate_fonts.py](scripts/validate_fonts.py) checks:
 
 - All retained ligatures with `calt` and `ss03` on and off, for Latin and common-script text.
+- Ligature outlines against the matching Fira Code weight.
 - Every exclusion and all eight combinations of zero/g/dollar features.
 - Feature independence, default behavior, cell counts, and 600-unit advances.
 - Printable ASCII, backtick contexts, Markdown code spans, and spacing accents
@@ -174,6 +184,8 @@ ligature glyphs cause a build failure.
   donor g/dollar outlines, scale, slant, and horizontal placement relative to
   `x`; g variants in words including `engine`, with fixed cell advances.
 - Font naming, style flags, and the absence of AAT layout tables.
+- Retina contour bounds against the Regular/Medium midpoint, including
+  checks for self-intersections and distinct dots and primes.
 
 Validation uses HarfBuzz's OpenType shaper and also CoreText when available.
 The checked source revisions were Office Code Pro `d8fe9b1`, Source Code Pro

@@ -3,13 +3,17 @@
 - This repo builds Ergonomic Mono from the phooky fork of Office Code Pro.
 - Source OTFs are in `Office-Code-Pro/Fonts/Office Code Pro/OTF/`: Light,
   Regular, Medium, Bold, and their Italic companions (eight styles).
+- Build Retina and Retina Italic at weight 450 between Regular and Medium.
+  Use the upright/italic Source Code Pro variable fonts in `source-code-pro/VF/`
+  at `wght=450` for their alternates and Fira Code Retina for their ligatures.
 - Outputs are `fonts/ErgonomicMono-*.otf`, with preferred family
   `Ergonomic Mono`. Keep naming and bold/italic flags consistent; the
   upstream license reserves "Office Code Pro".
 - Keep the slashed `zero` and single-storey `g` as defaults. `ss01` selects
   the existing dotted `zero.alt`; `ss02` selects the imported double-storey
   `g.ss02`. Each style contains all glyph variants.
-- Source Code Pro donors are in `source-code-pro/OTF/` (release branch).
+- The four original weights use Source Code Pro donors in
+  `source-code-pro/OTF/` (release branch).
   Use matching weights: upright `g`, italic `g.a`. Match Office Code Pro's
   x-height and italic angle, and keep the 600-unit advance.
 - Keep Office Code Pro's diagonal `dollar` (U+0024) as the default. `ss03`
