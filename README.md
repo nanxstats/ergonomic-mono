@@ -13,10 +13,16 @@ Each style contains all variants; there are no separate alternate font files.
 
 ## Install
 
-Install with Homebrew:
+Install all weights with Homebrew:
 
 ```bash
 brew install --cask nanxstats/tap/font-ergonomic-mono
+```
+
+For Retina and Bold only, use the minimal cask:
+
+```bash
+brew install --cask nanxstats/tap/font-ergonomic-mono-minimal
 ```
 
 Or install the `fonts/ErgonomicMono-*.otf` files using your OS font manager.
