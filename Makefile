@@ -71,8 +71,8 @@ $(LIGATURIZER_SCRIPTS): | $(LIGATURIZER_DIR)/.git
 $(FIRA_FONTS) $(LIGATURIZER_DIR)/fonts/fira/LICENSE: | $(LIGATURIZER_DIR)/fonts/fira/.git
 	@test -f "$@"
 
-$(OUTPUT_DIR)/ErgonomicMono-Retina.otf: $(SOURCE_DIR)/VF/SourceCodeVF-Upright.otf | retina-deps
-$(OUTPUT_DIR)/ErgonomicMono-RetinaItalic.otf: $(SOURCE_DIR)/VF/SourceCodeVF-Italic.otf | retina-deps
+$(OUTPUT_DIR)/ErgonomicMono-Retina.otf: $(SOURCE_DIR)/VF/SourceCodeVF-Upright.otf $(FIRA_OTF_DIR)/FiraCode-Regular.otf | retina-deps
+$(OUTPUT_DIR)/ErgonomicMono-RetinaItalic.otf: $(SOURCE_DIR)/VF/SourceCodeVF-Italic.otf $(FIRA_OTF_DIR)/FiraCode-Regular.otf | retina-deps
 $(filter-out %Italic.otf,$(FINAL_FONTS)): $(OUTPUT_DIR)/ErgonomicMono-%.otf: $(FIRA_OTF_DIR)/FiraCode-%.otf
 $(filter %Italic.otf,$(FINAL_FONTS)): $(OUTPUT_DIR)/ErgonomicMono-%Italic.otf: $(FIRA_OTF_DIR)/FiraCode-%.otf
 

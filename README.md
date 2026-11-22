@@ -24,7 +24,7 @@ Or install the `fonts/ErgonomicMono-*.otf` files using your OS font manager.
 ## Configure
 
 Select **Ergonomic Mono** in your editor or terminal.
-Choose **Retina** (450) for a weight halfway between Regular (400) and Medium
+Choose **Retina** (427) for a small increase from Regular (400) toward Medium
 (500). Retina comes in both upright and italic.
 Restart the application after installing or replacing fonts.
 
@@ -122,7 +122,7 @@ The build uses these inputs:
 - The embedded `zero.alt` glyph, which matches the corresponding Office Code
   Pro D dotted zero. The D fonts are not needed for the build.
 - Matching Source Code Pro weights in `source-code-pro/OTF/`. For Retina,
-  FontTools takes a `wght=450` instance from each of Adobe's upright and
+  FontTools takes a `wght=427` instance from each of Adobe's upright and
   italic variable fonts in `source-code-pro/VF/`. Uprights use `g` and
   italics use the double-storey `g.a` alternate. All styles also import
   `dollar` as `dollar.ss03` from the matching upright or italic donor. Both
@@ -131,8 +131,9 @@ The build uses these inputs:
   a 600-unit advance. Their horizontal placement is aligned using each font's
   `x` center with the slant removed. This shifts the italic imports 60 units
   right to match Office Code Pro's spacing; upright placement is unchanged.
-- Matching Fira Code Light, Regular, Retina, Medium, and Bold OTFs, including
-  for italic styles. Ligature outlines retain Fira Code's upright design.
+- Matching Fira Code OTFs supply the ligatures for each weight, including
+  italics. For Retina, the build interpolates the Regular (400) and Retina
+  (450) ligature outlines to 427. Ligatures retain Fira Code's upright design.
 
 [scripts/build_font.py](scripts/build_font.py) calls Ligaturizer's
 `LigatureCreator` directly. This replaces the old edits to `prefixed_fonts`
@@ -184,7 +185,7 @@ ligature glyphs cause a build failure.
   donor g/dollar outlines, scale, slant, and horizontal placement relative to
   `x`; g variants in words including `engine`, with fixed cell advances.
 - Font naming, style flags, and the absence of AAT layout tables.
-- Retina contour bounds against the Regular/Medium midpoint, including
+- Retina contour bounds at the selected position between Regular and Medium, including
   checks for self-intersections and distinct dots and primes.
 
 Validation uses HarfBuzz's OpenType shaper and also CoreText when available.

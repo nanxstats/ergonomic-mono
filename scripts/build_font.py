@@ -12,7 +12,7 @@ import psMat
 
 from font_config import FAMILY, POSTSCRIPT_FAMILY, STYLES, MISSING_FIRA_LIGATURES
 from font_config import load_ligatures, style_names
-from font_sources import interpolate_retina, office_font, open_sources
+from font_sources import interpolate_ligatures, interpolate_retina, office_font, open_sources
 
 
 def add_variant(font, feature, original, alternate):
@@ -67,6 +67,11 @@ def import_donor_glyph(font, donor, donor_name, target_name):
 
 def set_names(font, style, donor):
     preferred, legacy_family, legacy_style = style_names(style)
+    version = "1.000"
+    if style.startswith("Retina"):
+        # The earlier Retina inherited a head.fontRevision of 1.004 from Office Code Pro.
+        version = "1.005"
+        font.sfntRevision = float(version)
     font.familyname = FAMILY
     font.fontname = POSTSCRIPT_FAMILY + "-" + style
     font.fullname = FAMILY + " " + preferred
@@ -84,7 +89,7 @@ def set_names(font, style, donor):
     names = {
         "Family": legacy_family,
         "SubFamily": legacy_style,
-        "UniqueID": "1.000;" + POSTSCRIPT_FAMILY + ";" + font.fontname,
+        "UniqueID": version + ";" + POSTSCRIPT_FAMILY + ";" + font.fontname,
         "Fullname": font.fullname,
         "PostScriptName": font.fontname,
         "Preferred Family": FAMILY,
@@ -93,14 +98,14 @@ def set_names(font, style, donor):
         "WWS Family": FAMILY,
         "WWS Subfamily": preferred,
         "Copyright": font.copyright,
-        "Version": "Version 1.000; Office Code Pro 1.004; Ligaturizer",
+        "Version": "Version " + version + "; Office Code Pro 1.004; Ligaturizer",
     }
     languages = {row[0] for row in font.sfnt_names} | {"English (US)"}
     font.sfnt_names = tuple(row for row in font.sfnt_names if row[1] not in names)
     for language in sorted(languages):
         for key, value in names.items():
             font.appendSFNTName(language, key, value)
-    font.version = "1.000"
+    font.version = version
     font.style_set_names = (
         ("English (US)", "ss01", "Dotted zero"),
         ("English (US)", "ss02", "Double-storey g"),
@@ -139,11 +144,12 @@ def build(args):
     specs = load_ligatures(args.ligaturizer_dir)
     from ligaturize import LigatureCreator
 
-    with open_sources(args, style) as (font, medium, donor, fira):
+    with open_sources(args, style) as (font, medium, donor, fira, regular_fira):
         print("Building " + style)
         if medium is not None:
             with office_font(args.office_dir, style.replace("Retina", "Bold")) as bold:
-                interpolate_retina(font, medium, bold)
+                interpolate_retina(font, medium, bold, STYLES[style])
+            interpolate_ligatures(regular_fira, fira, STYLES[style], specs)
         for name in ("zero", "zero.alt", "g", "dollar", "x", "space"):
             if name not in font:
                 raise ValueError("Missing source glyph: " + name)

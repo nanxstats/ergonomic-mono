@@ -8,8 +8,8 @@
   @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-LightItalic.otf"); font-weight: 300; font-style: italic; }
   @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-Regular.otf"); font-weight: 400; }
   @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-RegularItalic.otf"); font-weight: 400; font-style: italic; }
-  @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-Retina.otf"); font-weight: 450; }
-  @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-RetinaItalic.otf"); font-weight: 450; font-style: italic; }
+  @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-Retina.otf"); font-weight: 427; }
+  @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-RetinaItalic.otf"); font-weight: 427; font-style: italic; }
   @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-Medium.otf"); font-weight: 500; }
   @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-MediumItalic.otf"); font-weight: 500; font-style: italic; }
   @font-face { font-family: "Ergonomic Mono"; src: url("../fonts/ErgonomicMono-Bold.otf"); font-weight: 700; }
@@ -22,14 +22,18 @@
   textarea { display: block; box-sizing: border-box; width: 100%; padding: 0.8rem; margin: 0.5rem 0 1.5rem; font: 16px/1.6 monospace; }
   section { border-top: 1px solid #888; padding: 1rem 0; }
   h2 { font-size: 14px; margin: 0 0 0.5rem; font-weight: 500; }
-  pre { font-family: "Ergonomic Mono", monospace; font-size: 24px; line-height: 1.7; margin: 0; overflow-x: auto; font-synthesis: none; font-feature-settings: var(--features); }
+  pre { font-family: "Ergonomic Mono", monospace; font-size: var(--sample-size, 14px); line-height: 1.7; margin: 0; overflow-x: auto; font-synthesis: none; font-feature-settings: var(--features); }
   #status { font-size: 14px; }
 </style>
 <h1>Ergonomic Mono</h1>
-<p>Compare the five weights and their italics. Retina (450) sits halfway
-between Regular (400) and Medium (500).</p>
+<p>Compare the five weights and their italics. Retina (427) is a small step
+up from Regular (400).</p>
 <fieldset>
-  <legend>OpenType features</legend>
+  <legend>Specimen settings</legend>
+  <label>Text size <select id="size">
+    <option value="12">12 px</option><option value="14" selected>14 px</option>
+    <option value="16">16 px</option><option value="24">24 px</option>
+  </select></label>
   <label><input id="calt" type="checkbox" checked> Programming ligatures (calt)</label>
   <label><input id="ss01" type="checkbox"> Dotted zero (ss01)</label>
   <label><input id="ss02" type="checkbox"> Double-storey g (ss02)</label>
@@ -44,8 +48,9 @@ $100.00  ${value}  $HOME  $$  &lt;$>  &lt;$  $>
 **`example.json`**  *`code`*  ```json</textarea>
 <main id="specimens"></main>
 <script>
-  const weights = [["Light", 300], ["Regular", 400], ["Retina", 450], ["Medium", 500], ["Bold", 700]];
+  const weights = [["Light", 300], ["Regular", 400], ["Retina", 427], ["Medium", 500], ["Bold", 700]];
   const sample = document.getElementById("sample");
+  const size = document.getElementById("size");
   const specimens = document.getElementById("specimens");
   const loads = [];
   for (const [name, weight] of weights) {
@@ -58,15 +63,16 @@ $100.00  ${value}  $HOME  $$  &lt;$>  &lt;$  $>
       pre.style.fontStyle = italic ? "italic" : "normal";
       section.append(label, pre);
       specimens.append(section);
-      loads.push(document.fonts.load(`${italic ? "italic" : "normal"} ${weight} 24px "Ergonomic Mono"`));
+      loads.push(document.fonts.load(`${italic ? "italic" : "normal"} ${weight} ${size.value}px "Ergonomic Mono"`));
     }
   }
   function update() {
     const settings = ["calt", "ss01", "ss02", "ss03"].map(tag => `"${tag}" ${Number(document.getElementById(tag).checked)}`);
     document.documentElement.style.setProperty("--features", settings.join(", "));
+    document.documentElement.style.setProperty("--sample-size", size.value + "px");
     for (const pre of specimens.querySelectorAll("pre")) pre.textContent = sample.value;
   }
-  for (const control of document.querySelectorAll("input, textarea")) control.addEventListener("input", update);
+  for (const control of document.querySelectorAll("input, select, textarea")) control.addEventListener("input", update);
   update();
   Promise.all(loads).then(fonts => {
     if (fonts.some(faces => faces.length !== 1)) throw new Error("Font missing");
