@@ -8,7 +8,7 @@ FAMILY = "Ergonomic Mono"
 POSTSCRIPT_FAMILY = "ErgonomicMono"
 STYLES = {
     weight + suffix: weight_class
-    for weight, weight_class in (("Light", 300), ("Regular", 400), ("Retina", 450),
+    for weight, weight_class in (("Light", 300), ("Regular", 400), ("Retina", 427),
                                  ("Medium", 500), ("Bold", 700))
     for suffix in ("", "Italic")
 }

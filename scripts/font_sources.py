@@ -35,11 +35,19 @@ def open_sources(args, style):
             donor_style = "It" if style == "RegularItalic" else style.replace("Italic", "It")
             donor_path = args.source_dir / "OTF" / ("SourceCodePro-" + donor_style + ".otf")
         donor = stack.enter_context(closing(fontforge.open(str(donor_path))))
+        if donor.os2_weight != STYLES[style]:
+            raise ValueError("Unexpected Source Code Pro weight for " + style)
         fira_path = args.ligaturizer_dir / "fonts/fira/distr/otf" / ("FiraCode-" + weight + ".otf")
         fira = stack.enter_context(closing(fontforge.open(str(fira_path))))
-        if donor.os2_weight != STYLES[style] or fira.os2_weight != STYLES[style]:
-            raise ValueError("Unexpected Source Code Pro or Fira Code weight for " + style)
-        yield office, medium, donor, fira
+        regular_fira = None
+        if weight == "Retina":
+            regular_path = fira_path.with_name("FiraCode-Regular.otf")
+            regular_fira = stack.enter_context(closing(fontforge.open(str(regular_path))))
+            if not regular_fira.os2_weight < STYLES[style] <= fira.os2_weight:
+                raise ValueError("Ligature weight outside Fira Code Regular and Retina")
+        elif fira.os2_weight != STYLES[style]:
+            raise ValueError("Unexpected Fira Code weight for " + style)
+        yield office, medium, donor, fira, regular_fira
 
 
 def compatible_layers(glyph, medium):
@@ -77,28 +85,55 @@ def on_curve_counts(layer):
     return [sum(point.on_curve for point in contour) for contour in layer]
 
 
-def interpolate_retina(regular, medium, bold):
+def interpolate_outline(left, right, fraction, name):
+    # FontForge can silently truncate a contour if on-curve point counts differ.
+    if on_curve_counts(left) != on_curve_counts(right):
+        raise ValueError("Incompatible interpolation outlines: " + name)
+    outline = left.interpolateNewLayer(right, fraction)
+    outline.round()
+    return outline
+
+
+def fira_layers(regular, retina, name):
+    left, right = regular[name].foreground, retina[name].foreground
+    if name == "numbersign_underscore_parenleft.liga":
+        # Fira's Retina starts the inner contour one corner later than Regular.
+        counter = right[1]
+        counter.makeFirst(3)
+        right[1] = counter
+    return left, right
+
+
+def interpolate_ligatures(regular, retina, weight, specs):
+    fraction = (weight - regular.os2_weight) / (retina.os2_weight - regular.os2_weight)
+    for name in sorted({spec["firacode_ligature_name"] for spec in specs.values()}):
+        if name not in retina:
+            continue
+        glyph = retina[name]
+        left, right = fira_layers(regular, retina, name)
+        glyph.foreground = interpolate_outline(left, right, fraction, name)
+        glyph.autoHint()
+
+
+def interpolate_retina(regular, medium, bold, weight):
+    fraction = (weight - regular.os2_weight) / (medium.os2_weight - regular.os2_weight)
     stem = regular.private["StdVW"][0]
-    bold_fraction = 0.5 * (medium.private["StdVW"][0] - stem) / (bold.private["StdVW"][0] - stem)
+    bold_fraction = fraction * (medium.private["StdVW"][0] - stem) / (bold.private["StdVW"][0] - stem)
     for key in ("BlueValues", "StdHW", "StdVW", "StemSnapH", "StemSnapV"):
-        regular.private[key] = tuple(round((a + b) / 2)
+        regular.private[key] = tuple(round(a + fraction * (b - a))
                                      for a, b in zip(regular.private[key], medium.private[key]))
-    regular.private["BlueShift"] = round((regular.private["BlueShift"] + medium.private["BlueShift"]) / 2)
+    shift = regular.private["BlueShift"]
+    regular.private["BlueShift"] = round(shift + fraction * (medium.private["BlueShift"] - shift))
 
     for glyph in regular.glyphs():
         name = glyph.glyphname
         if name in ("ellipsis", "second"):
             # Medium fuses repeated dots/primes. Bold has the distinct contours.
             left, right = glyph.foreground, bold[name].foreground
-            fraction = bold_fraction
+            outline = interpolate_outline(left, right, bold_fraction, name)
         else:
             left, right = compatible_layers(glyph, medium)
-            fraction = 0.5
-        # FontForge can silently truncate a contour if on-curve point counts differ.
-        if on_curve_counts(left) != on_curve_counts(right):
-            raise ValueError("Incompatible interpolation outlines: " + name)
-        outline = left.interpolateNewLayer(right, fraction)
-        outline.round()
+            outline = interpolate_outline(left, right, fraction, name)
         if name == "uni1E97" and outline.selfIntersects():
             outline.removeOverlap()
             outline.round()

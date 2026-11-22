@@ -16,7 +16,7 @@ import fontforge
 
 from font_config import EXCLUDED_LIGATURES, FAMILY, POSTSCRIPT_FAMILY, STYLES
 from font_config import MISSING_FIRA_LIGATURES, load_ligatures, style_names
-from font_sources import open_sources
+from font_sources import fira_layers, open_sources
 
 
 SPACING_ACCENTS = "`\u00a8\u00af\u00b4\u00b8\u02c6\u02c7\u02d8\u02d9\u02da\u02dc"
@@ -85,7 +85,7 @@ def validate_metadata(path, font, style):
     require(labels.get("ss03") == "Conventional dollar", "Missing ss03 label")
 
 
-def validate_retina_outline(glyph, regular, medium):
+def validate_retina_outline(glyph, regular, medium, fraction):
     name = glyph.glyphname
     actual, light, heavy = (g.foreground for g in (glyph, regular, medium))
     require(not actual.selfIntersects(), "Self-intersecting Retina outline: " + name)
@@ -107,8 +107,8 @@ def validate_retina_outline(glyph, regular, medium):
         bounds = [(c.boundingBox(), a.boundingBox(), b.boundingBox())
                   for c, a, b in zip(actual, light, heavy)]
     for result, start, end in bounds:
-        require(all(abs(v - (a + b) / 2) <= 1.5 for v, a, b in zip(result, start, end)),
-                "Retina outline is off the Regular/Medium midpoint: " + name)
+        require(all(abs(v - (a + fraction * (b - a))) <= 1.5 for v, a, b in zip(result, start, end)),
+                "Retina outline is off the requested weight: " + name)
 
 
 def validate_outlines(font, source, medium, donor, style):
@@ -124,11 +124,14 @@ def validate_outlines(font, source, medium, donor, style):
                     "Empty or incorrectly positioned ligature: " + glyph.glyphname)
         if glyph.glyphname.startswith("CR."):
             require(len(glyph.foreground) == 0, "Ligature spacer has a visible outline")
+    if medium is not None:
+        require(source.os2_weight < font.os2_weight < medium.os2_weight, "Retina weight outside masters")
+        fraction = (font.os2_weight - source.os2_weight) / (medium.os2_weight - source.os2_weight)
     for original in source.glyphs():
         if medium is not None:
             name = original.glyphname
             require(name in font, "Lost Retina glyph: " + name)
-            validate_retina_outline(font[name], original, medium[name])
+            validate_retina_outline(font[name], original, medium[name], fraction)
         if original.unicode >= 0:
             require(original.unicode in font, "Lost character U+%04X" % original.unicode)
             char = chr(original.unicode)
@@ -246,13 +249,23 @@ def validate_spacing(hb_shape, path, shapers):
                     require(row == expected, "G variant failed in word: " + text)
 
 
-def validate_ligature_outlines(hb_shape, path, font, fira, specs, texts):
+def validate_ligature_outlines(hb_shape, path, font, fira, regular_fira, specs, texts):
     rows = shape(hb_shape, path, texts, "calt=1", "ot")
-    fira.em = font.em
+    em_scale = font.em / fira.em
+    if regular_fira is not None:
+        fraction = (font.os2_weight - regular_fira.os2_weight) / (fira.os2_weight - regular_fira.os2_weight)
     for text, row in zip(texts, rows):
-        donor = fira[specs[text]["firacode_ligature_name"]]
-        outline = donor.foreground
-        outline.transform((font["space"].width / donor.width, 0, 0, 1, 0, 0))
+        name = specs[text]["firacode_ligature_name"]
+        donor = fira[name]
+        if regular_fira is None:
+            outline = donor.foreground
+        else:
+            left, right = fira_layers(regular_fira, fira, name)
+            outline = left.interpolateNewLayer(right, fraction)
+            outline.round()
+        # Ligaturizer changes the em first, rounding the advance before fitting the cell.
+        width_scale = em_scale * font["space"].width / round(em_scale * donor.width)
+        outline.transform((width_scale, 0, 0, em_scale, 0, 0))
         require(font[row[-1]].foreground.similar(outline, 1.5),
                 "Incorrect Fira Code ligature outline: " + text)
 
@@ -314,14 +327,14 @@ def main():
     for style in STYLES:
         path = args.output_dir / (POSTSCRIPT_FAMILY + "-" + style + ".otf")
         with closing(fontforge.open(str(path))) as font, open_sources(args, style) as sources:
-            source, medium, donor, fira = sources
+            source, medium, donor, fira, regular_fira = sources
             missing = {text for text, spec in specs.items() if spec["firacode_ligature_name"] not in fira}
             require(missing <= MISSING_FIRA_LIGATURES, "Unexpected missing donor ligatures")
             texts = sorted(specs.keys() - missing)
             validate_metadata(path, font, style)
             validate_outlines(font, source, medium, donor, style)
             validate_dollar(font, donor)
-            validate_ligature_outlines(args.hb_shape, path, font, fira, specs, texts)
+            validate_ligature_outlines(args.hb_shape, path, font, fira, regular_fira, specs, texts)
             validate_shaping(args.hb_shape, path, texts, shapers)
             validate_spacing(args.hb_shape, path, shapers)
             print("PASS %s: ss02/ss03 outlines and spacing, %d ligatures, 10 exclusions, 8 variant combinations, ASCII/accent spacing (%s)" % (
